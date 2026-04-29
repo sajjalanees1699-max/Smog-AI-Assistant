@@ -76,6 +76,56 @@ html, body, [data-testid="stAppViewContainer"] {
     border-radius: 6px !important;
 }
 
+/* ---------- selectbox dropdown popup fix ---------- */
+/* The popup renders OUTSIDE the sidebar, so we target it globally */
+
+/* The selected value shown inside the sidebar selectbox box */
+[data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+    background-color: rgba(255,255,255,0.12) !important;
+    border-color: rgba(255,255,255,0.30) !important;
+    border-radius: 8px !important;
+}
+[data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] span {
+    color: #ffffff !important;
+}
+
+/* The floating dropdown list (renders outside sidebar — needs global fix) */
+ul[data-testid="stSelectboxVirtualDropdown"],
+[data-baseweb="popover"] ul,
+[data-baseweb="menu"] {
+    background-color: #ffffff !important;
+    border-radius: 10px !important;
+    border: 1px solid #D4E6CC !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+}
+
+/* Each option item in the dropdown */
+ul[data-testid="stSelectboxVirtualDropdown"] li,
+[data-baseweb="menu"] li,
+[data-baseweb="popover"] li,
+[role="option"] {
+    color: #2D3748 !important;
+    background-color: #ffffff !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.90rem !important;
+}
+
+/* Hover state for each option */
+ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
+[data-baseweb="menu"] li:hover,
+[role="option"]:hover {
+    background-color: #EAF0E6 !important;
+    color: #2D5A27 !important;
+}
+
+/* Selected / highlighted option */
+[aria-selected="true"],
+[data-baseweb="menu"] [aria-selected="true"] {
+    background-color: #C8DEC0 !important;
+    color: #2D5A27 !important;
+    font-weight: 600 !important;
+}
+
 /* ---------- buttons ---------- */
 .stButton > button {
     background: linear-gradient(135deg, #4A7C40, #2D5A27) !important;
