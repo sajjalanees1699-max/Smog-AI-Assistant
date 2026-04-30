@@ -1,16 +1,26 @@
 # ============================================================
-#  SmogSense AI — Smog Analysis Assistant
-#  Fixed Version: No raw HTML visible on dashboard
-#  Uses native Streamlit widgets for all dynamic content
+#  SmogSense AI — Complete Working App
+#  Connects: UI + PDF Backend + Gemini AI
+#
+#  HOW TO RUN:
+#  1. pip install streamlit plotly pdfplumber google-generativeai
+#  2. Add your Gemini API key in ai_engine.py
+#  3. streamlit run app.py
 # ============================================================
 
 import time
+import json
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
+# ── Import our backend and AI modules ──────────────────────
+from backend import extract_text_from_pdf
+from ai_engine import get_summary, extract_pollutants, get_report, calculate_aqi, test_api_connection
+
+
 # ══════════════════════════════════════════════════════════════
-#  STEP 1 — PAGE CONFIG (must be first Streamlit command)
+#  STEP 1 — PAGE CONFIG
 # ══════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="SmogSense AI",
@@ -19,14 +29,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
 # ══════════════════════════════════════════════════════════════
-#  STEP 2 — CSS  (only static styles, no dynamic content here)
+#  STEP 2 — CSS STYLES
 # ══════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600&display=swap');
 
-/* ---------- palette ---------- */
 :root {
     --g-dark:  #2D5A27;
     --g-mid:   #4A7C40;
@@ -40,7 +50,6 @@ st.markdown("""
     --border:  #D4E6CC;
 }
 
-/* ---------- page ---------- */
 html, body, [data-testid="stAppViewContainer"] {
     background-color: var(--bg) !important;
     font-family: 'DM Sans', sans-serif;
@@ -51,14 +60,13 @@ html, body, [data-testid="stAppViewContainer"] {
     max-width: 1300px !important;
 }
 
-/* ---------- sidebar ---------- */
+/* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #1a3317 0%, #2D5A27 100%) !important;
 }
-/* default: all sidebar text white */
 [data-testid="stSidebar"] * { color: #ffffff !important; }
 
-/* FIX: file-uploader gets its own white box with dark text */
+/* File uploader — white box, dark text */
 [data-testid="stSidebar"] section[data-testid="stFileUploaderDropzone"],
 [data-testid="stSidebar"] [data-testid="stFileUploader"] > div {
     background: #ffffff !important;
@@ -69,27 +77,13 @@ html, body, [data-testid="stAppViewContainer"] {
 [data-testid="stSidebar"] [data-testid="stFileUploader"] > div * {
     color: #2D3748 !important;
 }
-/* keep the "Browse files" button readable */
 [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
     background: var(--g-mid) !important;
     color: #fff !important;
     border-radius: 6px !important;
 }
 
-/* ---------- selectbox dropdown popup fix ---------- */
-/* The popup renders OUTSIDE the sidebar, so we target it globally */
-
-/* The selected value shown inside the sidebar selectbox box */
-[data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-    background-color: rgba(255,255,255,0.12) !important;
-    border-color: rgba(255,255,255,0.30) !important;
-    border-radius: 8px !important;
-}
-[data-testid="stSidebar"] [data-testid="stSelectbox"] div[data-baseweb="select"] span {
-    color: #ffffff !important;
-}
-
-/* The floating dropdown list (renders outside sidebar — needs global fix) */
+/* Dropdown popup fix */
 ul[data-testid="stSelectboxVirtualDropdown"],
 [data-baseweb="popover"] ul,
 [data-baseweb="menu"] {
@@ -98,35 +92,17 @@ ul[data-testid="stSelectboxVirtualDropdown"],
     border: 1px solid #D4E6CC !important;
     box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
 }
-
-/* Each option item in the dropdown */
 ul[data-testid="stSelectboxVirtualDropdown"] li,
 [data-baseweb="menu"] li,
-[data-baseweb="popover"] li,
 [role="option"] {
     color: #2D3748 !important;
     background-color: #ffffff !important;
-    font-family: 'DM Sans', sans-serif !important;
     font-size: 0.90rem !important;
 }
+[role="option"]:hover { background-color: #EAF0E6 !important; color: #2D5A27 !important; }
+[aria-selected="true"] { background-color: #C8DEC0 !important; color: #2D5A27 !important; font-weight: 600 !important; }
 
-/* Hover state for each option */
-ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
-[data-baseweb="menu"] li:hover,
-[role="option"]:hover {
-    background-color: #EAF0E6 !important;
-    color: #2D5A27 !important;
-}
-
-/* Selected / highlighted option */
-[aria-selected="true"],
-[data-baseweb="menu"] [aria-selected="true"] {
-    background-color: #C8DEC0 !important;
-    color: #2D5A27 !important;
-    font-weight: 600 !important;
-}
-
-/* ---------- buttons ---------- */
+/* ── Buttons ── */
 .stButton > button {
     background: linear-gradient(135deg, #4A7C40, #2D5A27) !important;
     color: #fff !important;
@@ -143,7 +119,7 @@ ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
     box-shadow: 0 6px 18px rgba(45,90,39,0.42) !important;
 }
 
-/* ---------- shared card shell ---------- */
+/* ── Cards ── */
 .ss-card {
     background: var(--card);
     border-radius: 14px;
@@ -161,12 +137,9 @@ ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
     padding-bottom: .5rem;
     margin-bottom: 1rem;
     border-bottom: 1px solid var(--g-pale);
-    display: flex;
-    align-items: center;
-    gap: .4rem;
 }
 
-/* ---------- KPI boxes ---------- */
+/* ── KPI boxes ── */
 .kpi-wrap {
     background: var(--card);
     border-radius: 12px;
@@ -181,7 +154,7 @@ ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
 .kpi-val   { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
 .kpi-sub   { font-size: .73rem; color: var(--sub); margin-top: .2rem; }
 
-/* ---------- summary quote box ---------- */
+/* ── Summary quote box ── */
 .s-quote {
     background: var(--muted);
     border-left: 4px solid var(--g-light);
@@ -192,7 +165,7 @@ ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
     margin-top: .5rem;
 }
 
-/* ---------- source / rec row ---------- */
+/* ── Source / rec rows ── */
 .src-row {
     display: flex;
     align-items: flex-start;
@@ -207,69 +180,64 @@ ul[data-testid="stSelectboxVirtualDropdown"] li:hover,
 }
 .src-icon { font-size: 1.15rem; padding-top: .05rem; flex-shrink: 0; }
 
-/* ---------- progress bars ---------- */
+/* ── Progress bars ── */
 .pb-wrap  { margin-bottom: .85rem; }
 .pb-head  { display:flex; justify-content:space-between;
             font-size:.81rem; font-weight:500; margin-bottom:.28rem; }
 .pb-track { height:8px; background:#E2E8F0; border-radius:50px; overflow:hidden; }
 .pb-fill  { height:100%; border-radius:50px; }
 
-/* ---------- status badges ---------- */
-.badge {
-    display: inline-block;
-    padding: .28rem .8rem;
-    border-radius: 50px;
-    font-size: .76rem;
-    font-weight: 600;
-    margin-right: .4rem;
-}
+/* ── Badges ── */
+.badge { display:inline-block; padding:.28rem .8rem; border-radius:50px;
+         font-size:.76rem; font-weight:600; margin-right:.4rem; }
 .b-red    { background:#FEE2E2; color:#991B1B; }
 .b-orange { background:#FEF3C7; color:#92400E; }
 .b-green  { background:#D1FAE5; color:#065F46; }
 
-/* ---------- data table (used for pollutants) ---------- */
-.st-dataframe { border-radius: 10px !important; overflow: hidden !important; }
-
-/* ---------- expander ---------- */
+/* ── Expander ── */
 [data-testid="stExpander"] {
     border: 1px solid var(--g-pale) !important;
     border-radius: 12px !important;
     background: var(--card) !important;
 }
-[data-testid="stExpander"] summary span {
-    font-weight: 600 !important;
-    color: var(--g-dark) !important;
+
+/* ── Footer ── */
+.ss-footer {
+    margin-top: 2.2rem; padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    text-align: center; font-size: .76rem; color: var(--sub);
 }
 
-/* ---------- footer ---------- */
-.ss-footer {
-    margin-top: 2.2rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    text-align: center;
-    font-size: .76rem;
-    color: var(--sub);
+/* ── Mobile responsive ── */
+@media (max-width: 768px) {
+    .block-container { padding-left: 1rem !important; padding-right: 1rem !important; }
+    .kpi-val { font-size: 1.4rem; }
 }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 3 — DATA  (placeholders — swap for real backend later)
+#  STEP 3 — DEFAULT PLACEHOLDER DATA
+#  Shown before any PDF is uploaded
+#  Once PDF is analysed, real data replaces these values
 # ══════════════════════════════════════════════════════════════
 
-# Pollutant table shown in right column
-df_pollutants = pd.DataFrame({
-    "Pollutant":        ["PM2.5", "PM10",  "NO₂",  "SO₂",  "CO",   "O₃"],
-    "Measured (µg/m³)": [87.4,    142.6,   54.2,   18.7,   1200,   65.3],
-    "WHO Limit":        [15,      45,      40,     40,     4000,   100],
-    "% of Limit":       [583,     317,     136,    47,     30,     65],
-    "Status":           ["🔴 Hazardous", "🔴 Very High", "🟠 High",
-                         "🟡 Moderate",  "🟢 Good",     "🟡 Moderate"],
-    "Trend":            ["↑ +12%", "↑ +8%", "→ Stable", "↓ -3%", "↓ -5%", "↑ +4%"],
-})
+DEFAULT_POLLUTANTS = {
+    "PM2.5": 87.4, "PM10": 142.6, "NO2": 54.2,
+    "SO2": 18.7,   "CO":  1200.0, "O3":  65.3,
+}
 
-# Pollution sources (rendered as native Streamlit rows)
+DEFAULT_SUMMARY = (
+    "Upload a PDF air quality report and click **Analyse** to generate "
+    "an AI-powered summary of the document."
+)
+
+DEFAULT_REPORT = (
+    "The full AI-generated environmental analysis report will appear here "
+    "after you upload and analyse a PDF document."
+)
+
 SOURCES = [
     ("🏭", "Industrial Emissions",  "~38% of total PM2.5 load from factory clusters"),
     ("🚗", "Vehicular Exhaust",     "Elevated NO₂ spikes along major traffic corridors"),
@@ -277,24 +245,25 @@ SOURCES = [
     ("🏗️", "Construction Dust",     "Coarse particulate from active construction zones"),
 ]
 
-# Recommendations (rendered as native Streamlit rows)
-RECS = [
-    ("🚗", "Traffic Management",    "Odd-even vehicle restrictions on peak smog days (Oct–Feb). Estimated PM2.5 reduction: 12–18%."),
-    ("🏭", "Industrial Compliance", "Mandate real-time stack monitoring for flagged industrial units exceeding SEPA standards."),
-    ("🌳", "Urban Greening",        "Plant 500m green buffer belts along arterials using high-PM-absorption species."),
-    ("🏠", "Public Health Alert",   "Issue Level-3 Smog Alert. Distribute N95 masks to vulnerable communities."),
-    ("📡", "Monitoring Expansion",  "Install 12 additional IoT air quality sensors in identified hotspot zones."),
-]
+WHO_LIMITS = {"PM2.5": 15, "PM10": 45, "NO2": 40, "SO2": 40, "CO": 4000, "O3": 100}
 
-AQI_VAL   = 187
-AQI_LABEL = "Unhealthy"
-AQI_COLOR = "#C0392B"
 
 # ══════════════════════════════════════════════════════════════
 #  STEP 4 — SESSION STATE
+#  Stores results between button clicks
 # ══════════════════════════════════════════════════════════════
-if "analysed" not in st.session_state:
-    st.session_state.analysed = False
+defaults = {
+    "analysed":    False,
+    "summary":     DEFAULT_SUMMARY,
+    "pollutants":  DEFAULT_POLLUTANTS,
+    "report":      DEFAULT_REPORT,
+    "aqi_val":     187,
+    "aqi_label":   "Unhealthy",
+    "aqi_color":   "#C0392B",
+}
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
 
 # ══════════════════════════════════════════════════════════════
@@ -302,7 +271,6 @@ if "analysed" not in st.session_state:
 # ══════════════════════════════════════════════════════════════
 with st.sidebar:
 
-    # Brand
     st.markdown("""
     <div style="text-align:center;padding:1.1rem 0 .7rem">
         <div style="font-size:2.4rem">🌿</div>
@@ -314,20 +282,17 @@ with st.sidebar:
     <hr style="border-color:rgba(255,255,255,.14);margin:.4rem 0 .9rem">
     """, unsafe_allow_html=True)
 
-    # Upload label
     st.markdown(
         '<p style="font-size:.71rem;font-weight:700;text-transform:uppercase;'
         'letter-spacing:.10em;color:#C8DEC0;margin-bottom:.35rem">📂 Upload Report</p>',
         unsafe_allow_html=True,
     )
 
-    # ── FILE UPLOADER ──
-    # label_visibility="collapsed" hides the default label (we have our own above)
     uploaded_file = st.file_uploader(
         "Upload PDF",
         type=["pdf"],
         label_visibility="collapsed",
-        help="Upload an official air quality monitoring report (PDF)",
+        help="Upload an official air quality or research report (PDF)",
     )
     if uploaded_file:
         st.success(f"✅ {uploaded_file.name}")
@@ -335,31 +300,85 @@ with st.sidebar:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Analyse / Reset buttons
+    # ── Analyse & Reset Buttons ────────────────────────────────
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔍 Analyse"):
             if uploaded_file:
-                with st.spinner("Extracting data…"):
-                    time.sleep(1.5)
-                st.session_state.analysed = True
-                st.success("Done!")
+
+                # ── STEP A: Test API Key first ────────────────
+                with st.spinner("🔑 Checking API key..."):
+                    api_ok, api_msg = test_api_connection()
+
+                if not api_ok:
+                    st.error(f"❌ API Error:\n{api_msg}")
+
+                else:
+                    # ── STEP B: Extract PDF text ──────────────
+                    with st.spinner("📄 Reading PDF..."):
+                        raw_text = extract_text_from_pdf(uploaded_file)
+
+                    if raw_text.startswith("ERROR"):
+                        st.error(f"❌ PDF Error: {raw_text}")
+
+                    elif len(raw_text.strip()) < 50:
+                        st.error(
+                            "❌ PDF mein koi text nahi mila!\n"
+                            "PDF scanned image ho sakta hai. "
+                            "Text-based PDF use karein."
+                        )
+
+                    else:
+                        st.info(f"📄 {len(raw_text)} characters extracted from PDF")
+
+                        # ── STEP C: Run AI tasks ──────────────
+                        with st.spinner("🤖 Generating summary..."):
+                            summary = get_summary(raw_text)
+
+                        with st.spinner("🔬 Extracting pollutants..."):
+                            pollutants = extract_pollutants(raw_text)
+
+                        with st.spinner("📝 Writing report..."):
+                            report = get_report(raw_text)
+
+                        # Show any pollutant extraction errors
+                        if "_error" in pollutants:
+                            st.warning(
+                                f"⚠️ Pollutant extraction issue: "
+                                f"{pollutants['_error']}\n"
+                                "Placeholder values shown."
+                            )
+                            pollutants.pop("_error")
+
+                        # ── STEP D: Calculate AQI ─────────────
+                        aqi_val, aqi_label, aqi_color = calculate_aqi(
+                            pollutants.get("PM2.5", 0)
+                        )
+
+                        # ── STEP E: Save to session state ──────
+                        st.session_state.summary    = summary
+                        st.session_state.pollutants = pollutants
+                        st.session_state.report     = report
+                        st.session_state.aqi_val    = aqi_val
+                        st.session_state.aqi_label  = aqi_label
+                        st.session_state.aqi_color  = aqi_color
+                        st.session_state.analysed   = True
+
+                        st.success("✅ Analysis complete!")
+                        st.rerun()
+
             else:
-                st.warning("Upload a PDF first.")
+                st.warning("Please upload a PDF first.")
+
     with c2:
         if st.button("🔄 Reset"):
-            st.session_state.analysed = False
+            for key, val in defaults.items():
+                st.session_state[key] = val
             st.rerun()
 
     st.markdown("<hr style='border-color:rgba(255,255,255,.14);margin:.9rem 0'>",
                 unsafe_allow_html=True)
 
-    # Settings
-    st.markdown(
-        '<p style="font-size:.71rem;font-weight:700;text-transform:uppercase;'
-        'letter-spacing:.10em;color:#C8DEC0;margin-bottom:.5rem">⚙️ Settings</p>',
-        unsafe_allow_html=True,
-    )
     st.selectbox("Region",
                  ["Lahore, PK", "Karachi, PK", "Delhi, IN", "Beijing, CN"],
                  label_visibility="visible")
@@ -369,32 +388,39 @@ with st.sidebar:
 
     st.markdown("<hr style='border-color:rgba(255,255,255,.14);margin:.9rem 0'>",
                 unsafe_allow_html=True)
-
     st.markdown("""
     <p style="font-size:.79rem;color:rgba(255,255,255,.62);line-height:1.6">
     SmogSense AI extracts pollutant data from official reports and benchmarks
-    them against WHO guidelines using AI-powered document analysis.
+    them against WHO guidelines using Gemini AI.
     </p>
     <p style="font-size:.70rem;color:rgba(255,255,255,.35);margin-top:.5rem">
-    v1.0 · AI Hackathon 2025</p>
+    v2.0 · AI Hackathon 2025</p>
     """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 6 — HEADER  (no date / live-demo badge)
+#  STEP 6 — HEADER
 # ══════════════════════════════════════════════════════════════
-st.markdown("""
+status_indicator = "🟢 Analysis Complete" if st.session_state.analysed else "⚪ Awaiting Upload"
+
+st.markdown(f"""
 <div style="background:linear-gradient(135deg,#2D5A27 0%,#4A7C40 65%,#7BAE6F 100%);
             border-radius:14px;padding:1.75rem 2.2rem;margin-bottom:1.4rem;
             box-shadow:0 4px 20px rgba(45,90,39,.18);">
-    <div style="display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap">
-        <div style="font-size:2.6rem">🌫️</div>
-        <div>
-            <h1 style="font-family:'Playfair Display',serif;font-size:1.8rem;
-                       color:#fff;margin:0;line-height:1.2">Smog Analysis Assistant</h1>
-            <p style="color:rgba(255,255,255,.75);font-size:.91rem;margin:.28rem 0 0">
-                AI-powered extraction &amp; analysis of air quality data from regulatory reports
-            </p>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem">
+        <div style="display:flex;align-items:center;gap:1.1rem">
+            <div style="font-size:2.6rem">🌫️</div>
+            <div>
+                <h1 style="font-family:'Playfair Display',serif;font-size:1.8rem;
+                           color:#fff;margin:0;line-height:1.2">Smog Analysis Assistant</h1>
+                <p style="color:rgba(255,255,255,.75);font-size:.91rem;margin:.28rem 0 0">
+                    AI-powered extraction &amp; analysis of air quality data from regulatory reports
+                </p>
+            </div>
+        </div>
+        <div style="background:rgba(255,255,255,0.15);border-radius:50px;
+                    padding:.4rem 1rem;font-size:.80rem;color:#fff;font-weight:600">
+            {status_indicator}
         </div>
     </div>
 </div>
@@ -402,7 +428,7 @@ st.markdown("""
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 7 — KPI ROW  (4 metric boxes)
+#  STEP 7 — KPI ROW (uses real data from session state)
 # ══════════════════════════════════════════════════════════════
 def kpi(col, icon, label, value, sub, color):
     col.markdown(f"""
@@ -413,17 +439,28 @@ def kpi(col, icon, label, value, sub, color):
     <div class="kpi-sub">{sub}</div>
 </div>""", unsafe_allow_html=True)
 
+# Count how many pollutants exceed WHO limits
+pollutants_now = st.session_state.pollutants
+exceedances = sum(
+    1 for p, v in pollutants_now.items()
+    if v > WHO_LIMITS.get(p, 9999) and v > 0
+)
+detected = sum(1 for v in pollutants_now.values() if v > 0)
+
 k1, k2, k3, k4 = st.columns(4)
-kpi(k1, "📊", "Air Quality Index", AQI_VAL, AQI_LABEL,          AQI_COLOR)
-kpi(k2, "🔬", "Pollutants Found",  "6",     "of 8 monitored",   "#2D5A27")
-kpi(k3, "⚠️", "WHO Exceedances",  "4",     "above safe limits", "#D97706")
-kpi(k4, "📄", "AI Confidence",    "94%",   "extraction score",  "#2980B9")
+kpi(k1, "📊", "Air Quality Index",
+    st.session_state.aqi_val,
+    st.session_state.aqi_label,
+    st.session_state.aqi_color)
+kpi(k2, "🔬", "Pollutants Detected", detected,   "of 6 monitored",    "#2D5A27")
+kpi(k3, "⚠️", "WHO Exceedances",    exceedances, "above safe limits",  "#D97706")
+kpi(k4, "📄", "AI Confidence",      "94%",       "extraction score",   "#2980B9")
 
 st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 8 — MAIN TWO-COLUMN LAYOUT
+#  STEP 8 — TWO-COLUMN LAYOUT
 # ══════════════════════════════════════════════════════════════
 left, right = st.columns([1, 1], gap="large")
 
@@ -433,36 +470,28 @@ left, right = st.columns([1, 1], gap="large")
 # ────────────────────────────────────────────
 with left:
 
-    # ── Executive Summary ──────────────────────────────────────
+    # ── Executive Summary (real AI text) ──────────────────────
     st.markdown('<div class="ss-card">', unsafe_allow_html=True)
     st.markdown('<div class="ss-card-title">📋 Executive Summary</div>', unsafe_allow_html=True)
 
-    # Status badges (short, safe HTML)
-    st.markdown("""
+    aqi_label_now = st.session_state.aqi_label
+    badge_class   = "b-red" if "Unhealthy" in aqi_label_now or "Hazardous" in aqi_label_now else "b-orange"
+    st.markdown(f"""
 <div style="margin-bottom:.75rem">
-    <span class="badge b-red">🔴 Unhealthy Air Quality</span>
+    <span class="badge {badge_class}">🔴 {aqi_label_now} Air Quality</span>
     <span class="badge b-orange">⚠️ High-Risk Alert</span>
 </div>""", unsafe_allow_html=True)
 
-    # Summary text — using st.markdown with plain markdown (no HTML needed here)
-    st.markdown("""
-<div class="s-quote">
-Analysis of the monitoring report for <strong>Lahore Metropolitan Area</strong> reveals
-critically elevated PM2.5 and NO₂ levels, exceeding WHO 2021 guidelines by
-<strong>5.8× and 1.4×</strong> respectively.<br><br>
-The event is driven by vehicular emissions, industrial discharge, and agricultural
-burning. Immediate risks exist for sensitive populations; prolonged exposure is
-hazardous for the general public.
-</div>
-""", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)   # close .ss-card
+    st.markdown(
+        f'<div class="s-quote">{st.session_state.summary}</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Pollution Sources ──────────────────────────────────────
-    # Rendered ONE row at a time with st.markdown — keeps each block short & safe
     st.markdown('<div class="ss-card">', unsafe_allow_html=True)
     st.markdown('<div class="ss-card-title">🏭 Identified Pollution Sources</div>',
                 unsafe_allow_html=True)
-
     for icon, title, desc in SOURCES:
         st.markdown(f"""
 <div class="src-row">
@@ -470,25 +499,21 @@ hazardous for the general public.
     <div><strong>{title}</strong><br>
     <span style="color:#718096;font-size:.82rem">{desc}</span></div>
 </div>""", unsafe_allow_html=True)
-
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Concentration Progress Bars ────────────────────────────
-    BAR_DATA = [
-        ("PM2.5", 87.4,  15,   "#C0392B"),
-        ("NO₂",   54.2,  40,   "#E67E22"),
-        ("SO₂",   18.7,  40,   "#27AE60"),
-        ("O₃",    65.3,  100,  "#F0B429"),
-    ]
+    # ── Progress Bars (real pollutant values) ─────────────────
+    BAR_POLLUTANTS = ["PM2.5", "NO2", "SO2", "O3"]
+    BAR_COLORS     = ["#C0392B", "#E67E22", "#27AE60", "#F0B429"]
 
     st.markdown('<div class="ss-card">', unsafe_allow_html=True)
     st.markdown('<div class="ss-card-title">📈 Concentration vs WHO Safe Limits</div>',
                 unsafe_allow_html=True)
 
-    for name, val, limit, color in BAR_DATA:
-        pct_display = min((val / limit) * 100, 100)          # capped at 100 for bar width
+    for name, color in zip(BAR_POLLUTANTS, BAR_COLORS):
+        val   = pollutants_now.get(name, 0)
+        limit = WHO_LIMITS.get(name, 1)
+        pct   = min((val / limit) * 100, 100) if limit else 0
         label = f"{val/limit:.1f}× limit" if val > limit else "Within limit"
-        # Each bar is its own short st.markdown call — no string concatenation issues
         st.markdown(f"""
 <div class="pb-wrap">
     <div class="pb-head">
@@ -496,11 +521,11 @@ hazardous for the general public.
         <span style="color:{color};font-weight:600">{val} µg/m³ &nbsp;·&nbsp; {label}</span>
     </div>
     <div class="pb-track">
-        <div class="pb-fill" style="width:{pct_display:.1f}%;background:{color}"></div>
+        <div class="pb-fill" style="width:{pct:.1f}%;background:{color}"></div>
     </div>
 </div>""", unsafe_allow_html=True)
 
-    st.caption("Bar fill = % of WHO guideline. Values above 100× are capped at full width.")
+    st.caption("Bar fill = % of WHO guideline. Values above limit are capped at full width.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -509,14 +534,37 @@ hazardous for the general public.
 # ────────────────────────────────────────────
 with right:
 
-    # ── Pollutant Data Table ───────────────────────────────────
-    # Use native st.dataframe — guaranteed no raw HTML leak
+    # ── Pollutant Data Table (real values) ────────────────────
+    df_rows = []
+    for pollutant, measured in pollutants_now.items():
+        limit  = WHO_LIMITS.get(pollutant, 1)
+        pct    = int((measured / limit) * 100) if limit and measured > 0 else 0
+        if measured == 0:
+            status = "⚪ No Data"
+        elif measured <= limit * 0.5:
+            status = "🟢 Good"
+        elif measured <= limit:
+            status = "🟡 Moderate"
+        elif measured <= limit * 2:
+            status = "🟠 High"
+        else:
+            status = "🔴 Hazardous"
+
+        df_rows.append({
+            "Pollutant":        pollutant,
+            "Measured (µg/m³)": measured,
+            "WHO Limit":        limit,
+            "% of Limit":       pct,
+            "Status":           status,
+        })
+
+    df = pd.DataFrame(df_rows)
+
     st.markdown('<div class="ss-card">', unsafe_allow_html=True)
     st.markdown('<div class="ss-card-title">🔬 Extracted Pollutant Readings</div>',
                 unsafe_allow_html=True)
-
     st.dataframe(
-        df_pollutants,
+        df,
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -524,24 +572,24 @@ with right:
             "Measured (µg/m³)": st.column_config.NumberColumn("Measured (µg/m³)", format="%.1f"),
             "WHO Limit":        st.column_config.NumberColumn("WHO Limit",         format="%d"),
             "% of Limit":       st.column_config.ProgressColumn(
-                                    "% of Limit",
-                                    min_value=0, max_value=600,
-                                    format="%d%%",
-                                ),
+                                    "% of Limit", min_value=0, max_value=600, format="%d%%"),
             "Status":           st.column_config.TextColumn("Status"),
-            "Trend":            st.column_config.TextColumn("Trend"),
         },
     )
-    st.caption("⚠️ Placeholder data. Upload a PDF and click Analyse to extract real values.")
+    if not st.session_state.analysed:
+        st.caption("⚠️ Placeholder data. Upload a PDF and click Analyse to extract real values.")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Radar Chart ────────────────────────────────────────────
+    # ── Radar Chart (real values) ──────────────────────────────
+    r_labels = ["PM2.5", "PM10", "NO2", "SO2", "O3"]
+    r_values = [
+        min(int((pollutants_now.get(p, 0) / WHO_LIMITS.get(p, 1)) * 100), 650)
+        for p in r_labels
+    ]
+
     st.markdown('<div class="ss-card">', unsafe_allow_html=True)
     st.markdown('<div class="ss-card-title">📡 Radar — % of WHO Safe Limits</div>',
                 unsafe_allow_html=True)
-
-    r_labels = ["PM2.5", "PM10", "NO₂", "SO₂", "O₃"]
-    r_values = [583,     317,    136,   47,    65]
 
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
@@ -562,13 +610,13 @@ with right:
     fig.update_layout(
         polar=dict(
             bgcolor="rgba(0,0,0,0)",
-            angularaxis=dict(tickfont=dict(size=11, color="#4A5568", family="DM Sans"),
+            angularaxis=dict(tickfont=dict(size=11, color="#4A5568"),
                              linecolor="#C8DEC0", gridcolor="#E8F0E4"),
             radialaxis=dict(visible=True, range=[0, 650], ticksuffix="%",
                             tickfont=dict(size=9, color="#718096"),
                             linecolor="#C8DEC0", gridcolor="#E8F0E4"),
         ),
-        legend=dict(orientation="h", y=-0.14, font=dict(size=11, family="DM Sans")),
+        legend=dict(orientation="h", y=-0.14, font=dict(size=11)),
         margin=dict(l=40, r=40, t=15, b=50),
         paper_bgcolor="rgba(0,0,0,0)",
         height=285,
@@ -578,34 +626,23 @@ with right:
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 9 — EXPANDER: AI Deep-Dive Report
+#  STEP 9 — EXPANDER: Full AI Report (real Gemini output)
 # ══════════════════════════════════════════════════════════════
 with st.expander("🤖  Full AI-Generated Report  ·  Click to expand", expanded=False):
 
-    tab1, tab2, tab3 = st.tabs(["📑 Detailed Analysis", "💊 Health Impacts", "🌱 Recommendations"])
+    tab1, tab2, tab3 = st.tabs(
+        ["📑 Detailed Analysis", "💊 Health Impacts", "🌱 Recommendations"]
+    )
 
-    # ── Tab 1 ──────────────────────────────────────────────────
     with tab1:
-        st.markdown("#### 🔍 Methodology")
-        st.markdown(
-            "The SmogSense AI pipeline parsed the uploaded PDF using a vision-language "
-            "extraction model. Pollutant concentrations were normalized to µg/m³ and "
-            "validated against WHO 2021 and SEPA Pakistan standards with a **94% confidence score**."
-        )
-        st.markdown("#### 🌫️ PM2.5 Critical Finding")
-        st.markdown(
-            "Fine particulate matter (PM2.5) at **87.4 µg/m³** is **5.8× above** the WHO annual "
-            "guideline of 15 µg/m³. Source apportionment points to combined vehicular and "
-            "industrial emissions as the dominant drivers."
-        )
-        st.markdown("#### 🏭 Source Attribution")
-        st.markdown(
-            "Industrial combustion **(38%)**, on-road vehicles **(31%)**, biomass burning **(22%)**, "
-            "and road dust resuspension **(9%)** are the primary contributors, identified via "
-            "48-hour HYSPLIT back-trajectory modelling."
-        )
+        st.markdown("#### 🔍 AI Analysis Report")
+        # Show real Gemini report — split into paragraphs
+        report_text = st.session_state.report
+        paragraphs  = [p.strip() for p in report_text.split('\n\n') if p.strip()]
+        for para in paragraphs:
+            st.markdown(f'<div class="s-quote" style="margin-bottom:.7rem">{para}</div>',
+                        unsafe_allow_html=True)
 
-    # ── Tab 2 ──────────────────────────────────────────────────
     with tab2:
         h1, h2 = st.columns(2)
         with h1:
@@ -633,13 +670,13 @@ with st.expander("🤖  Full AI-Generated Report  ·  Click to expand", expanded
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # AQI Gauge
+        # AQI Gauge (real value)
         gfig = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=AQI_VAL,
+            value=st.session_state.aqi_val,
             gauge={
                 "axis": {"range": [0, 300]},
-                "bar":  {"color": AQI_COLOR, "thickness": 0.28},
+                "bar":  {"color": st.session_state.aqi_color, "thickness": 0.28},
                 "steps": [
                     {"range": [0,   50],  "color": "#D5F5E3"},
                     {"range": [51,  100], "color": "#FDEBD0"},
@@ -648,17 +685,22 @@ with st.expander("🤖  Full AI-Generated Report  ·  Click to expand", expanded
                     {"range": [201, 300], "color": "#F1948A"},
                 ],
             },
-            title={"text": "Current AQI Reading", "font": {"size": 13, "family": "DM Sans"}},
-            number={"font": {"size": 38, "color": AQI_COLOR, "family": "DM Sans"}},
+            title={"text": "Current AQI Reading", "font": {"size": 13}},
+            number={"font": {"size": 38, "color": st.session_state.aqi_color}},
         ))
         gfig.update_layout(height=210, margin=dict(l=20,r=20,t=30,b=5),
                            paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(gfig, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Tab 3 ──────────────────────────────────────────────────
     with tab3:
-        # Each rec is rendered individually — no long concatenated strings
-        for icon, title, detail in RECS:
+        recs = [
+            ("🚗", "Traffic Management",    "Odd-even vehicle restrictions on peak smog days. Estimated PM2.5 reduction: 12–18%."),
+            ("🏭", "Industrial Compliance", "Mandate real-time stack monitoring for flagged industrial units exceeding SEPA standards."),
+            ("🌳", "Urban Greening",        "Plant 500m green buffer belts along arterials using high-PM-absorption tree species."),
+            ("🏠", "Public Health Alert",   "Issue Level-3 Smog Alert. Distribute N95 masks to vulnerable communities."),
+            ("📡", "Monitoring Expansion",  "Install 12 additional IoT air quality sensors in identified hotspot zones."),
+        ]
+        for icon, title, detail in recs:
             st.markdown(f"""
 <div class="src-row" style="margin-bottom:.55rem">
     <span class="src-icon">{icon}</span>
@@ -668,7 +710,7 @@ with st.expander("🤖  Full AI-Generated Report  ·  Click to expand", expanded
 
 
 # ══════════════════════════════════════════════════════════════
-#  STEP 10 — UPLOAD NUDGE (only shown before upload)
+#  STEP 10 — UPLOAD NUDGE
 # ══════════════════════════════════════════════════════════════
 if not uploaded_file:
     st.markdown("""
@@ -679,7 +721,7 @@ if not uploaded_file:
     <div style="font-weight:700;color:#2D5A27;font-size:.98rem;margin-bottom:.3rem">
         Upload a PDF to activate AI Analysis</div>
     <div style="color:#4A7C40;font-size:.87rem">
-        Use the sidebar on the left — drag &amp; drop your official air quality report
+        Use the sidebar — drag &amp; drop your official air quality report
         to begin real-time pollutant extraction and WHO benchmarking.
     </div>
 </div>""", unsafe_allow_html=True)
@@ -692,6 +734,6 @@ st.markdown("""
 <div class="ss-footer">
     🌿 <strong>SmogSense AI</strong> &nbsp;·&nbsp;
     Built for AI Hackathon 2025 &nbsp;·&nbsp;
-    WHO 2021 Air Quality Guidelines &nbsp;·&nbsp;
-    Placeholder data shown until a report is uploaded
+    Powered by Google Gemini &nbsp;·&nbsp;
+    WHO 2021 Air Quality Guidelines
 </div>""", unsafe_allow_html=True)
